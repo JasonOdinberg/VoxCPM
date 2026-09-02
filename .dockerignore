@@ -1,0 +1,26 @@
+# Model weights (mounted at runtime via volumes)
+models/
+data/
+lora/
+output/
+
+# Git history
+.git/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.venv-bench/
+
+# Docker config (not needed inside image)
+docker/docker-compose.yml
+docker/nginx.conf
+docker/README.md
+
+# IDE / OS
+.DS_Store
+.vscode/

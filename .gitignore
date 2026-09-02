@@ -5,3 +5,9 @@ voxcpm.egg-info
 .DS_Store
 ./pretrained_models/
 app_local.py
+
+# Docker volume mount directories (large files, user-specific)
+models/
+data/
+lora/
+output/

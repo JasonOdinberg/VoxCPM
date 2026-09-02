@@ -500,6 +500,7 @@ def start_training(
 
         assert training_process.stdout is not None
         for line in training_process.stdout:
+            print(line, end="", flush=True)  # Stream to stdout (Docker logs)
             training_log += line
             # Keep log size manageable
             if len(training_log) > 100000:
@@ -1322,6 +1323,9 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
     )
 
 if __name__ == "__main__":
-    # Ensure lora directory exists
     os.makedirs("lora", exist_ok=True)
-    app.queue().launch(server_name="0.0.0.0", server_port=7860)
+    port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    root_path = os.environ.get("GRADIO_ROOT_PATH", "")
+
+    print(f"\U0001f399\ufe0f  VoxCPM Training WebUI: http://0.0.0.0:{port}{root_path}", flush=True)
+    app.queue().launch(server_name="0.0.0.0", server_port=port, root_path=root_path)
