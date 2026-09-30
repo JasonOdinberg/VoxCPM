@@ -51,6 +51,7 @@ def train(
     batch_size: int = 1,
     grad_accum_steps: int = 1,
     num_workers: int = 2,
+    preprocessing_num_workers: int = 1,
     num_iters: int = 100_000,
     log_interval: int = 100,
     valid_interval: int = 1_000,
@@ -108,23 +109,44 @@ def train(
         f"Please set sample_rate: {expected_sr} in your training config. "
     )
 
-    train_ds, val_ds = load_audio_text_datasets(
-        train_manifest=train_manifest,
-        val_manifest=val_manifest,
-        sample_rate=sample_rate,
-    )
-
     def tokenize(batch):
         text_list = batch["text"]
         text_ids = [tokenizer(text) for text in text_list]
         return {"text_ids": text_ids}
 
-    train_ds = train_ds.map(tokenize, batched=True, remove_columns=["text"])
-    # Save original validation texts for audio generation display
-    val_texts = None
-    if val_ds is not None:
-        val_texts = list(val_ds["text"])  # Save original texts
-        val_ds = val_ds.map(tokenize, batched=True, remove_columns=["text"])
+    def prepare_datasets():
+        prepared_train_ds, prepared_val_ds = load_audio_text_datasets(
+            train_manifest=train_manifest,
+            val_manifest=val_manifest,
+            sample_rate=sample_rate,
+            num_proc=preprocessing_num_workers,
+            prepare_durations=max_batch_tokens > 0,
+        )
+        prepared_train_ds = prepared_train_ds.map(
+            tokenize,
+            batched=True,
+            remove_columns=["text"],
+            num_proc=preprocessing_num_workers,
+            desc="Tokenizing training text",
+        )
+        prepared_val_texts = None
+        if prepared_val_ds is not None:
+            prepared_val_texts = list(prepared_val_ds["text"])
+            prepared_val_ds = prepared_val_ds.map(
+                tokenize,
+                batched=True,
+                remove_columns=["text"],
+                num_proc=preprocessing_num_workers,
+                desc="Tokenizing validation text",
+            )
+        return prepared_train_ds, prepared_val_ds, prepared_val_texts
+
+    # Build the Hugging Face cache once. Other ranks wait and then reuse it.
+    if accelerator.rank == 0:
+        train_ds, val_ds, val_texts = prepare_datasets()
+    accelerator.barrier()
+    if accelerator.rank != 0:
+        train_ds, val_ds, val_texts = prepare_datasets()
 
     dataset_cnt = int(max(train_ds["dataset_id"])) + 1 if "dataset_id" in train_ds.column_names else 1
     num_train_samples = len(train_ds)

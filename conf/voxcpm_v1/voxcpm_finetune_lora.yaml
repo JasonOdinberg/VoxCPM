@@ -5,6 +5,7 @@ sample_rate: 16000
 batch_size: 16
 grad_accum_steps: 1  # Gradient accumulation steps, >1 can increase effective batch size without increasing memory
 num_workers: 2
+preprocessing_num_workers: 8  # Metadata reading and text tokenization workers
 num_iters: 2000
 log_interval: 10
 valid_interval: 1000
@@ -33,4 +34,4 @@ lora:
 # - If distribute=false (default): save pretrained_path as base_model in lora_config.json
 # - If distribute=true: save hf_model_id as base_model (hf_model_id is required)
 # hf_model_id: "openbmb/VoxCPM-0.5B"
-# distribute: true       
+# distribute: true

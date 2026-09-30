@@ -1,9 +1,11 @@
+import json
 import math
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import argbind
 import torch
-from datasets import Audio, Dataset, DatasetDict, load_dataset
+from datasets import Audio, Dataset, DatasetDict, Features, Sequence, Value, load_dataset
 from torch.utils.data import Dataset as TorchDataset
 
 from ..model.voxcpm import VoxCPMConfig
@@ -16,6 +18,102 @@ DEFAULT_REF_AUDIO_COLUMN = "ref_audio"
 DEFAULT_ID_COLUMN = "dataset_id"
 
 
+def _manifest_features(
+    *,
+    manifest_paths: List[str],
+    text_column: str,
+    audio_column: str,
+    ref_audio_column: str,
+    dataset_id_column: str,
+) -> Features:
+    features = {
+        text_column: Value("string"),
+        audio_column: Value("string"),
+        ref_audio_column: Value("string"),
+        "duration": Value("float64"),
+        "ref_duration": Value("float64"),
+        "is_prompt": Value("bool"),
+    }
+    if dataset_id_column:
+        features[dataset_id_column] = Value("int64")
+
+    for manifest_path in manifest_paths:
+        with Path(manifest_path).open("r", encoding="utf-8") as manifest:
+            first_line = next((line for line in manifest if line.strip()), "")
+        if not first_line:
+            continue
+        first_record = json.loads(first_line)
+        for column, value in first_record.items():
+            if column not in features and value is not None:
+                features[column] = _feature_from_value(value)
+    return Features(features)
+
+
+def _feature_from_value(value):
+    if isinstance(value, bool):
+        return Value("bool")
+    if isinstance(value, int):
+        return Value("int64")
+    if isinstance(value, float):
+        return Value("float64")
+    if isinstance(value, str):
+        return Value("string")
+    if isinstance(value, list):
+        first_value = next((item for item in value if item is not None), "")
+        return Sequence(_feature_from_value(first_value))
+    if isinstance(value, dict):
+        return {key: _feature_from_value(item) for key, item in value.items() if item is not None}
+    raise ValueError(f"Unsupported manifest field type: {type(value).__name__}")
+
+
+def _resolve_audio_path(path: str, manifest_dir: str) -> str:
+    if not path:
+        return path
+    audio_path = Path(path).expanduser()
+    if not audio_path.is_absolute():
+        audio_path = Path(manifest_dir) / audio_path
+    return str(audio_path.resolve())
+
+
+def _read_audio_duration(path: str, column: str) -> float:
+    if not path:
+        raise ValueError(f"Cannot determine duration: '{column}' is empty.")
+
+    import soundfile as sf
+
+    try:
+        return float(sf.info(path).duration)
+    except Exception as exc:
+        raise ValueError(f"Cannot read audio metadata for '{column}' file '{path}': {exc}") from exc
+
+
+def _prepare_audio_metadata(
+    example: Dict,
+    *,
+    audio_column: str,
+    ref_audio_column: str,
+    manifest_dir: str,
+    prepare_durations: bool,
+) -> Dict:
+    audio_path = _resolve_audio_path(example.get(audio_column), manifest_dir)
+    ref_audio_path = _resolve_audio_path(example.get(ref_audio_column), manifest_dir)
+
+    duration = example.get("duration")
+    if prepare_durations and duration is None:
+        duration = _read_audio_duration(audio_path, audio_column)
+
+    ref_duration = example.get("ref_duration")
+    if prepare_durations and ref_audio_path and ref_duration is None:
+        ref_duration = _read_audio_duration(ref_audio_path, ref_audio_column)
+
+    return {
+        audio_column: audio_path,
+        ref_audio_column: ref_audio_path,
+        "duration": duration,
+        "ref_duration": ref_duration,
+    }
+
+
 @argbind.bind()
 def load_audio_text_datasets(
     train_manifest: str,
@@ -26,38 +124,69 @@ def load_audio_text_datasets(
     dataset_id_column: str = DEFAULT_ID_COLUMN,
     sample_rate: int = 16_000,
     num_proc: int = 1,
+    prepare_durations: bool = False,
 ) -> Tuple[Dataset, Optional[Dataset]]:
+    if num_proc < 1:
+        raise ValueError(f"num_proc must be at least 1, got {num_proc}.")
+
     data_files = {"train": train_manifest}
     if val_manifest:
         data_files["validation"] = val_manifest
 
-    dataset_dict: DatasetDict = load_dataset("json", data_files=data_files)
+    dataset_dict: DatasetDict = load_dataset(
+        "json",
+        data_files=data_files,
+        features=_manifest_features(
+            manifest_paths=list(data_files.values()),
+            text_column=text_column,
+            audio_column=audio_column,
+            ref_audio_column=ref_audio_column,
+            dataset_id_column=dataset_id_column,
+        ),
+    )
 
-    def prepare(ds: Dataset) -> Dataset:
+    def prepare(ds: Dataset, manifest_path: str) -> Dataset:
         if audio_column not in ds.column_names:
             raise ValueError(f"Expected '{audio_column}' column in manifest.")
+        ds = ds.map(
+            _prepare_audio_metadata,
+            fn_kwargs={
+                "audio_column": audio_column,
+                "ref_audio_column": ref_audio_column,
+                "manifest_dir": str(Path(manifest_path).expanduser().resolve().parent),
+                "prepare_durations": prepare_durations,
+            },
+            num_proc=num_proc,
+            desc="Preparing audio metadata",
+        )
         ds = ds.cast_column(audio_column, Audio(sampling_rate=sample_rate))
         if audio_column != DEFAULT_AUDIO_COLUMN:
             ds = ds.rename_column(audio_column, DEFAULT_AUDIO_COLUMN)
         if text_column != DEFAULT_TEXT_COLUMN:
             ds = ds.rename_column(text_column, DEFAULT_TEXT_COLUMN)
 
-        # ref_audio is optional — cast to Audio if the column exists
+        # Explicit JSON features make ref_audio nullable even when omitted.
         ref_col = ref_audio_column if ref_audio_column in ds.column_names else DEFAULT_REF_AUDIO_COLUMN
-        if ref_col in ds.column_names:
+        has_ref_audio = ref_col in ds.column_names and any(ds[ref_col])
+        if has_ref_audio:
             ds = ds.cast_column(ref_col, Audio(sampling_rate=sample_rate))
             if ref_col != DEFAULT_REF_AUDIO_COLUMN:
                 ds = ds.rename_column(ref_col, DEFAULT_REF_AUDIO_COLUMN)
+        elif ref_col in ds.column_names:
+            ds = ds.remove_columns(ref_col)
 
         if dataset_id_column and dataset_id_column in ds.column_names:
-            if dataset_id_column != DEFAULT_ID_COLUMN:
+            if all(value is None for value in ds[dataset_id_column]):
+                ds = ds.remove_columns(dataset_id_column)
+                ds = ds.add_column(DEFAULT_ID_COLUMN, [0] * len(ds))
+            elif dataset_id_column != DEFAULT_ID_COLUMN:
                 ds = ds.rename_column(dataset_id_column, DEFAULT_ID_COLUMN)
         else:
             ds = ds.add_column(DEFAULT_ID_COLUMN, [0] * len(ds))
         return ds
 
-    train_ds = prepare(dataset_dict["train"])
-    val_ds = prepare(dataset_dict["validation"]) if "validation" in dataset_dict else None
+    train_ds = prepare(dataset_dict["train"], train_manifest)
+    val_ds = prepare(dataset_dict["validation"], val_manifest) if "validation" in dataset_dict else None
     return train_ds, val_ds
 
 
@@ -82,32 +211,26 @@ def compute_sample_lengths(
     text_ids_list = ds["text_ids"]
     text_lens = [len(t) for t in text_ids_list]
 
-    has_duration = "duration" in ds.column_names
-    if has_duration:
-        durations = ds["duration"]
-    else:
-        durations = []
-        for i in range(len(ds)):
-            audio = ds[i][DEFAULT_AUDIO_COLUMN]
-            durations.append(len(audio["array"]) / float(audio["sampling_rate"]))
+    if "duration" not in ds.column_names:
+        raise ValueError("The dataset must contain a 'duration' column before length filtering.")
+    durations = ds["duration"]
+    missing_duration_count = sum(duration is None for duration in durations)
+    if missing_duration_count:
+        raise ValueError(
+            f"The dataset contains {missing_duration_count} samples without duration metadata. "
+            "Load it with prepare_durations=True before length filtering."
+        )
 
     has_ref_audio = DEFAULT_REF_AUDIO_COLUMN in ds.column_names
-    if has_ref_audio:
-        ref_duration_col = "ref_duration" if "ref_duration" in ds.column_names else None
+    ref_durations = ds["ref_duration"] if "ref_duration" in ds.column_names else [None] * len(ds)
 
     lengths = []
-    for i, (text_len, duration) in enumerate(zip(text_lens, durations)):
+    for text_len, duration, ref_dur in zip(text_lens, durations, ref_durations):
         t_vae = math.ceil(float(duration) * audio_vae_fps)
         t_seq = math.ceil(t_vae / patch_size)
 
         ref_seq = 0
         if has_ref_audio:
-            # Estimate ref_audio length; ref_audio is None for samples without it
-            if ref_duration_col:
-                ref_dur = ds[i].get(ref_duration_col)
-            else:
-                ref_item = ds[i].get(DEFAULT_REF_AUDIO_COLUMN)
-                ref_dur = len(ref_item["array"]) / float(ref_item["sampling_rate"]) if ref_item else None
             if ref_dur is not None and float(ref_dur) > 0:
                 ref_vae = math.ceil(float(ref_dur) * audio_vae_fps)
                 ref_seq = math.ceil(ref_vae / patch_size)
