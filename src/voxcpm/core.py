@@ -11,6 +11,36 @@ from .model.voxcpm2 import VoxCPM2Model
 from .model.utils import next_and_close
 
 
+def resolve_model_path(
+    path_or_id: str,
+    cache_dir: str | None = None,
+    local_files_only: bool = False,
+) -> str:
+    """Resolve a model path: return as-is if it's a local directory,
+    otherwise download from HuggingFace Hub via ``snapshot_download()``.
+
+    This is the single shared helper used by both
+    :meth:`VoxCPM.from_pretrained` (inference) and the training WebUI.
+
+    Args:
+        path_or_id: Local directory path **or** HuggingFace Hub repo ID
+            (e.g. ``"openbmb/VoxCPM2"``).
+        cache_dir: Optional cache directory forwarded to
+            ``snapshot_download()``.
+        local_files_only: When *True*, never attempt a network download.
+
+    Returns:
+        Absolute local filesystem path to the model directory.
+    """
+    if os.path.isdir(path_or_id):
+        return path_or_id
+    return snapshot_download(
+        repo_id=path_or_id,
+        cache_dir=cache_dir,
+        local_files_only=local_files_only,
+    )
+
+
 class VoxCPM:
     def __init__(
         self,
@@ -148,20 +178,14 @@ class VoxCPM:
             ValueError: If neither a valid ``hf_model_id`` nor a resolvable
                 ``hf_model_id`` is provided.
         """
-        repo_id = hf_model_id
-        if not repo_id:
+        if not hf_model_id:
             raise ValueError("You must provide hf_model_id")
 
-        # Load from local path if provided
-        if os.path.isdir(repo_id):
-            local_path = repo_id
-        else:
-            # Otherwise, try from_pretrained (Hub); exit on failure
-            local_path = snapshot_download(
-                repo_id=repo_id,
-                cache_dir=cache_dir,
-                local_files_only=local_files_only,
-            )
+        local_path = resolve_model_path(
+            hf_model_id,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
+        )
 
         return cls(
             voxcpm_model_path=local_path,
