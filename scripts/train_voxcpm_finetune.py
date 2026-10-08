@@ -29,6 +29,7 @@ except ImportError:
 
 import json
 
+from voxcpm.core import resolve_model_path
 from voxcpm.model import VoxCPMModel, VoxCPM2Model
 from voxcpm.model.voxcpm import LoRAConfig as LoRAConfigV1
 from voxcpm.model.voxcpm2 import LoRAConfig as LoRAConfigV2
@@ -90,6 +91,9 @@ def train(
 
     writer = SummaryWriter(log_dir=str(tb_dir)) if accelerator.rank == 0 else None
     tracker = TrainingTracker(writer=writer, log_file=str(save_dir / "train.log"), rank=accelerator.rank)
+
+    # Resolve HuggingFace Hub IDs to local paths (e.g. "openbmb/VoxCPM1.5")
+    pretrained_path = resolve_model_path(pretrained_path)
 
     # Auto-detect model architecture from config.json
     with open(os.path.join(pretrained_path, "config.json"), "r", encoding="utf-8") as _f:
