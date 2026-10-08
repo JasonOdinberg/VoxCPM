@@ -25,70 +25,7 @@ import numpy as np
 from funasr import AutoModel
 
 # --- Localization ---
-LANG_DICT = {
-    "en": {
-        "title": "VoxCPM LoRA WebUI",
-        "tab_train": "Training",
-        "tab_infer": "Inference",
-        "pretrained_path": "Pretrained Model Path",
-        "train_manifest": "Train Manifest (jsonl)",
-        "val_manifest": "Validation Manifest (Optional)",
-        "lr": "Learning Rate",
-        "max_iters": "Max Iterations",
-        "batch_size": "Batch Size",
-        "lora_rank": "LoRA Rank",
-        "lora_alpha": "LoRA Alpha",
-        "save_interval": "Save Interval",
-        "start_train": "Start Training",
-        "stop_train": "Stop Training",
-        "train_logs": "Training Logs",
-        "text_to_synth": "Text to Synthesize",
-        "voice_cloning": "### Voice Cloning (Optional)",
-        "ref_audio": "Reference Audio",
-        "ref_text": "Reference Text (Optional)",
-        "select_lora": "Select LoRA Checkpoint",
-        "cfg_scale": "CFG Scale",
-        "infer_steps": "Inference Steps",
-        "seed": "Seed",
-        "gen_audio": "Generate Audio",
-        "gen_output": "Generated Audio",
-        "status": "Status",
-        "lang_select": "Language / 语言",
-        "refresh": "Refresh",
-        "output_name": "Output Name (Optional, resume if exists)",
-    },
-    "zh": {
-        "title": "VoxCPM LoRA WebUI",
-        "tab_train": "训练 (Training)",
-        "tab_infer": "推理 (Inference)",
-        "pretrained_path": "预训练模型路径",
-        "train_manifest": "训练数据清单 (jsonl)",
-        "val_manifest": "验证数据清单 (可选)",
-        "lr": "学习率 (Learning Rate)",
-        "max_iters": "最大迭代次数",
-        "batch_size": "批次大小 (Batch Size)",
-        "lora_rank": "LoRA Rank",
-        "lora_alpha": "LoRA Alpha",
-        "save_interval": "保存间隔 (Steps)",
-        "start_train": "开始训练",
-        "stop_train": "停止训练",
-        "train_logs": "训练日志",
-        "text_to_synth": "合成文本",
-        "voice_cloning": "### 声音克隆 (可选)",
-        "ref_audio": "参考音频",
-        "ref_text": "参考文本 (可选)",
-        "select_lora": "选择 LoRA 模型",
-        "cfg_scale": "CFG Scale (引导系数)",
-        "infer_steps": "推理步数",
-        "seed": "随机种子 (Seed)",
-        "gen_audio": "生成音频",
-        "gen_output": "生成结果",
-        "status": "状态",
-        "lang_select": "Language / 语言",
-        "refresh": "刷新",
-        "output_name": "输出目录名称 (可选，若存在则继续训练)",
-    },
-}
+from i18n import STRINGS, DEFAULT_LANG, t
 
 # Global variables
 current_model: Optional[VoxCPM] = None
@@ -342,15 +279,15 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
 
         # 如果没有提供参考文本，尝试自动识别
         if not prompt_text or not prompt_text.strip():
-            print("参考音频已提供但缺少文本，自动识别中...", file=sys.stderr)
+            print(t("log_ref_audio_no_text"), file=sys.stderr)
             try:
                 final_prompt_text = recognize_audio(prompt_wav)
                 if final_prompt_text:
-                    print(f"自动识别文本: {final_prompt_text}", file=sys.stderr)
+                    print(t("log_auto_recognized").format(text=final_prompt_text), file=sys.stderr)
                 else:
-                    return None, "错误：无法识别参考音频内容，请手动填写参考文本"
+                    return None, t("error_asr_failed")
             except Exception as e:
-                return None, f"错误：自动识别参考音频失败 - {str(e)}"
+                return None, t("error_asr_exception").format(error=str(e))
         else:
             final_prompt_text = prompt_text.strip()
     # 如果没有参考音频，两个都设为 None（用于零样本 TTS）
@@ -900,98 +837,98 @@ label {
 with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css) as app:
 
     # State for language
-    lang_state = gr.State("zh")  # Default to Chinese
+    lang_state = gr.State(DEFAULT_LANG)
 
     # 标题区域
     with gr.Row(elem_classes="title-section"):
         with gr.Column(scale=3):
-            title_md = gr.Markdown("""
+            title_md = gr.Markdown(f"""
             # 🎵 VoxCPM LoRA WebUI
-            ### 强大的语音合成和 LoRA 微调工具
+            {t('header_title')}
 
-            支持语音克隆、LoRA 模型训练和推理的完整解决方案
+            {t('header_subtitle')}
             """)
         with gr.Column(scale=1):
             lang_btn = gr.Radio(
-                choices=["en", "zh"], value="zh", label="🌐 Language / 语言", elem_classes="lang-selector"
+                choices=["en", "zh"], value=DEFAULT_LANG, label="🌐 Language / 语言", elem_classes="lang-selector"
             )
 
     with gr.Tabs(elem_classes="tabs") as tabs:
         # === Training Tab ===
-        with gr.Tab("🚀 训练 (Training)") as tab_train:
-            gr.Markdown("""
-            ### 🎯 模型训练设置
-            配置你的 LoRA 微调训练参数
+        with gr.Tab("🚀 " + t("tab_train")) as tab_train:
+            train_setup_md = gr.Markdown(f"""
+            {t('train_setup_title')}
+            {t('train_setup_desc')}
             """)
 
             with gr.Row():
                 with gr.Column(scale=2, elem_classes="form-section"):
-                    gr.Markdown("#### 📁 基础配置")
+                    base_config_md = gr.Markdown(t("base_config_header"))
 
                     train_pretrained_path = gr.Textbox(
-                        label="📂 预训练模型路径", value=default_pretrained_path, elem_classes="input-field"
+                        label="📂 " + t("pretrained_path"), value=default_pretrained_path, elem_classes="input-field"
                     )
                     train_manifest = gr.Textbox(
-                        label="📋 训练数据清单 (jsonl)",
+                        label="📋 " + t("train_manifest"),
                         value="examples/train_data_example.jsonl",
                         elem_classes="input-field",
                     )
-                    val_manifest = gr.Textbox(label="📊 验证数据清单 (可选)", value="", elem_classes="input-field")
+                    val_manifest = gr.Textbox(label="📊 " + t("val_manifest"), value="", elem_classes="input-field")
 
-                    gr.Markdown("#### ⚙️ 训练参数")
+                    train_params_md = gr.Markdown(t("train_params_header"))
 
                     with gr.Row():
-                        lr = gr.Number(label="📈 学习率 (Learning Rate)", value=1e-4, elem_classes="input-field")
+                        lr = gr.Number(label="📈 " + t("lr"), value=1e-4, elem_classes="input-field")
                         num_iters = gr.Number(
-                            label="🔄 最大迭代次数", value=2000, precision=0, elem_classes="input-field"
+                            label="🔄 " + t("max_iters"), value=2000, precision=0, elem_classes="input-field"
                         )
                         batch_size = gr.Number(
-                            label="📦 批次大小 (Batch Size)", value=1, precision=0, elem_classes="input-field"
+                            label="📦 " + t("batch_size"), value=1, precision=0, elem_classes="input-field"
                         )
 
                     with gr.Row():
-                        lora_rank = gr.Number(label="🎯 LoRA Rank", value=32, precision=0, elem_classes="input-field")
-                        lora_alpha = gr.Number(label="⚖️ LoRA Alpha", value=16, precision=0, elem_classes="input-field")
+                        lora_rank = gr.Number(label="🎯 " + t("lora_rank"), value=32, precision=0, elem_classes="input-field")
+                        lora_alpha = gr.Number(label="⚖️ " + t("lora_alpha"), value=16, precision=0, elem_classes="input-field")
                         save_interval = gr.Number(
-                            label="💾 保存间隔 (Steps)", value=1000, precision=0, elem_classes="input-field"
+                            label="💾 " + t("save_interval"), value=1000, precision=0, elem_classes="input-field"
                         )
 
                     output_name = gr.Textbox(
-                        label="📁 输出目录名称 (可选，若存在则继续训练)", value="", elem_classes="input-field"
+                        label="📁 " + t("output_name"), value="", elem_classes="input-field"
                     )
 
                     with gr.Row():
-                        start_btn = gr.Button("▶️ 开始训练", variant="primary", elem_classes="button-primary")
-                        stop_btn = gr.Button("⏹️ 停止训练", variant="stop", elem_classes="button-stop")
+                        start_btn = gr.Button("▶️ " + t("start_train"), variant="primary", elem_classes="button-primary")
+                        stop_btn = gr.Button("⏹️ " + t("stop_train"), variant="stop", elem_classes="button-stop")
 
-                    with gr.Accordion("🔧 高级选项 (Advanced)", open=False, elem_classes="accordion"):
+                    with gr.Accordion(t("advanced_accordion"), open=False, elem_classes="accordion") as advanced_acc:
                         with gr.Row():
-                            grad_accum_steps = gr.Number(label="梯度累积 (grad_accum_steps)", value=1, precision=0)
-                            num_workers = gr.Number(label="数据加载线程 (num_workers)", value=2, precision=0)
-                            log_interval = gr.Number(label="日志间隔 (log_interval)", value=10, precision=0)
+                            grad_accum_steps = gr.Number(label=t("grad_accum_steps"), value=1, precision=0)
+                            num_workers = gr.Number(label=t("num_workers"), value=2, precision=0)
+                            log_interval = gr.Number(label=t("log_interval"), value=10, precision=0)
                         with gr.Row():
-                            valid_interval = gr.Number(label="验证间隔 (valid_interval)", value=1000, precision=0)
-                            weight_decay = gr.Number(label="权重衰减 (weight_decay)", value=0.01)
-                            warmup_steps = gr.Number(label="warmup_steps", value=100, precision=0)
+                            valid_interval = gr.Number(label=t("valid_interval"), value=1000, precision=0)
+                            weight_decay = gr.Number(label=t("weight_decay"), value=0.01)
+                            warmup_steps = gr.Number(label=t("warmup_steps"), value=100, precision=0)
                         with gr.Row():
-                            max_steps = gr.Number(label="最大步数 (max_steps, 0→默认num_iters)", value=0, precision=0)
-                            sample_rate = gr.Number(label="采样率 (sample_rate)", value=16000, precision=0)
-                            max_grad_norm = gr.Number(label="梯度裁剪 (max_grad_norm, 0=关闭)", value=1.0)
+                            max_steps = gr.Number(label=t("max_steps"), value=0, precision=0)
+                            sample_rate = gr.Number(label=t("sample_rate"), value=16000, precision=0)
+                            max_grad_norm = gr.Number(label=t("max_grad_norm"), value=1.0)
                         with gr.Row():
-                            tensorboard_path = gr.Textbox(label="Tensorboard 路径 (可选)", value="")
-                            enable_lm = gr.Checkbox(label="启用 LoRA LM (enable_lm)", value=True)
-                            enable_dit = gr.Checkbox(label="启用 LoRA DIT (enable_dit)", value=True)
+                            tensorboard_path = gr.Textbox(label=t("tensorboard_path"), value="")
+                            enable_lm = gr.Checkbox(label=t("enable_lm"), value=True)
+                            enable_dit = gr.Checkbox(label=t("enable_dit"), value=True)
                         with gr.Row():
-                            enable_proj = gr.Checkbox(label="启用投影 (enable_proj)", value=False)
-                            dropout = gr.Number(label="LoRA Dropout", value=0.0)
+                            enable_proj = gr.Checkbox(label=t("enable_proj"), value=False)
+                            dropout = gr.Number(label=t("dropout"), value=0.0)
 
-                        gr.Markdown("#### 分发选项 (Distribution)")
+                        distribution_md = gr.Markdown(t("distribution_header"))
                         with gr.Row():
-                            hf_model_id = gr.Textbox(label="HuggingFace Model ID (e.g., openbmb/VoxCPM2)", value="")
-                            distribute = gr.Checkbox(label="分发模式 (distribute)", value=False)
+                            hf_model_id = gr.Textbox(label=t("hf_model_id"), value="")
+                            distribute = gr.Checkbox(label=t("distribute"), value=False)
 
                 with gr.Column(scale=2, elem_classes="form-section"):
-                    gr.Markdown("#### 📊 训练日志")
+                    train_logs_md = gr.Markdown(t("train_logs_header"))
                     logs_out = gr.TextArea(
                         label="",
                         lines=20,
@@ -1055,87 +992,87 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
             timer.tick(get_training_log, outputs=logs_out)
 
         # === Inference Tab ===
-        with gr.Tab("🎵 推理 (Inference)") as tab_infer:
-            gr.Markdown("""
-            ### 🎤 语音合成
-            使用训练好的 LoRA 模型生成语音，支持 LoRA 微调和声音克隆
+        with gr.Tab("🎵 " + t("tab_infer")) as tab_infer:
+            infer_header_md = gr.Markdown(f"""
+            {t('infer_title')}
+            {t('infer_desc')}
             """)
 
             with gr.Row():
                 # 左栏：输入配置 (35%)
                 with gr.Column(scale=35, elem_classes="form-section"):
-                    gr.Markdown("#### 📝 输入配置")
+                    input_config_md = gr.Markdown(t("input_config_header"))
 
                     infer_text = gr.TextArea(
-                        label="💬 合成文本",
+                        label="💬 " + t("text_to_synth"),
                         value="Hello, this is a test of the VoxCPM LoRA model.",
                         elem_classes="input-field",
                         lines=4,
-                        placeholder="输入要合成的文本内容...",
+                        placeholder=t("placeholder_synth"),
                     )
 
-                    gr.Markdown("**🎭 声音克隆（可选）**")
+                    voice_clone_md = gr.Markdown(t("voice_clone_header"))
 
-                    prompt_wav = gr.Audio(label="🎵 参考音频", type="filepath", elem_classes="input-field")
+                    prompt_wav = gr.Audio(label="🎵 " + t("ref_audio"), type="filepath", elem_classes="input-field")
 
                     prompt_text = gr.Textbox(
-                        label="📝 参考文本（可选）",
+                        label="📝 " + t("ref_text"),
                         elem_classes="input-field",
-                        placeholder="如不填写，将自动识别参考音频内容",
+                        placeholder=t("placeholder_ref_text"),
                     )
 
                 # 中栏：模型选择和参数配置 (35%)
                 with gr.Column(scale=35, elem_classes="form-section"):
-                    gr.Markdown("#### 🤖 模型选择")
+                    model_select_md = gr.Markdown(t("model_select_header"))
 
                     lora_select = gr.Dropdown(
-                        label="🎯 LoRA 模型",
+                        label="🎯 " + t("select_lora"),
                         choices=["None"] + scan_lora_checkpoints(),
                         value="None",
                         interactive=True,
                         elem_classes="input-field",
-                        info="选择训练好的 LoRA 模型，或选择 None 使用基础模型",
+                        info=t("info_lora_select"),
                     )
 
-                    refresh_lora_btn = gr.Button("🔄 刷新模型列表", elem_classes="button-refresh", size="sm")
+                    refresh_lora_btn = gr.Button("🔄 " + t("refresh"), elem_classes="button-refresh", size="sm")
 
-                    gr.Markdown("#### ⚙️ 生成参数")
+                    gen_params_md = gr.Markdown(t("gen_params_header"))
 
                     cfg_scale = gr.Slider(
-                        label="🎛️ CFG Scale",
+                        label="🎛️ " + t("cfg_scale"),
                         minimum=1.0,
                         maximum=5.0,
                         value=2.0,
                         step=0.1,
-                        info="引导系数，值越大越贴近提示",
+                        info=t("info_cfg"),
                     )
 
                     steps = gr.Slider(
-                        label="🔢 推理步数",
+                        label="🔢 " + t("infer_steps"),
                         minimum=1,
                         maximum=50,
                         value=10,
                         step=1,
-                        info="生成质量与步数成正比，但耗时更长",
+                        info=t("info_steps"),
                     )
 
                     seed = gr.Number(
-                        label="🎲 随机种子",
+                        label="🎲 " + t("seed"),
                         value=-1,
                         precision=0,
                         elem_classes="input-field",
-                        info="-1 为随机，固定值可复现结果",
+                        info=t("info_seed"),
                     )
 
-                    generate_btn = gr.Button("🎵 生成音频", variant="primary", elem_classes="button-primary", size="lg")
+                    generate_btn = gr.Button("🎵 " + t("gen_audio"), variant="primary", elem_classes="button-primary", size="lg")
 
                 # 右栏：生成结果 (30%)
                 with gr.Column(scale=30, elem_classes="form-section"):
-                    gr.Markdown("#### 🎧 生成结果")
+                    gen_output_md = gr.Markdown(t("gen_output_header"))
 
                     audio_out = gr.Audio(label="", elem_classes="input-field", show_label=False)
 
-                    gr.Markdown("#### 📋 状态信息")
+                    status_header_md = gr.Markdown(t("status_header"))
 
                     status_out = gr.Textbox(
                         label="",
@@ -1143,7 +1080,7 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                         elem_classes="input-field",
                         show_label=False,
                         lines=3,
-                        placeholder="等待生成...",
+                        placeholder=t("placeholder_status"),
                     )
 
             def refresh_loras():
@@ -1152,7 +1089,7 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                 choices = ["None"] + [ckpt[0] for ckpt in checkpoints_with_info]
 
                 # 输出调试信息
-                print(f"刷新 LoRA 列表: 找到 {len(checkpoints_with_info)} 个检查点", file=sys.stderr)
+                print(t("log_refresh_lora").format(count=len(checkpoints_with_info)), file=sys.stderr)
                 for ckpt_path, base_model in checkpoints_with_info:
                     if base_model:
                         print(f"  - {ckpt_path} (Base Model: {base_model})", file=sys.stderr)
@@ -1183,54 +1120,23 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
 
     # --- Language Switching Logic ---
     def change_language(lang):
-        d = LANG_DICT[lang]
-        # Labels for advanced options
-        if lang == "zh":
-            adv = {
-                "grad_accum_steps": "梯度累积 (grad_accum_steps)",
-                "num_workers": "数据加载线程 (num_workers)",
-                "log_interval": "日志间隔 (log_interval)",
-                "valid_interval": "验证间隔 (valid_interval)",
-                "weight_decay": "权重衰减 (weight_decay)",
-                "warmup_steps": "warmup_steps",
-                "max_steps": "最大步数 (max_steps)",
-                "sample_rate": "采样率 (sample_rate)",
-                "max_grad_norm": "梯度裁剪 (max_grad_norm, 0=关闭)",
-                "enable_lm": "启用 LoRA LM (enable_lm)",
-                "enable_dit": "启用 LoRA DIT (enable_dit)",
-                "enable_proj": "启用投影 (enable_proj)",
-                "dropout": "LoRA Dropout",
-                "tensorboard_path": "Tensorboard 路径 (可选)",
-                "hf_model_id": "HuggingFace Model ID (e.g., openbmb/VoxCPM2)",
-                "distribute": "分发模式 (distribute)",
-            }
-        else:
-            adv = {
-                "grad_accum_steps": "Grad Accum Steps",
-                "num_workers": "Num Workers",
-                "log_interval": "Log Interval",
-                "valid_interval": "Valid Interval",
-                "weight_decay": "Weight Decay",
-                "warmup_steps": "Warmup Steps",
-                "max_steps": "Max Steps",
-                "sample_rate": "Sample Rate",
-                "max_grad_norm": "Max Grad Norm (0=disabled)",
-                "enable_lm": "Enable LoRA LM",
-                "enable_dit": "Enable LoRA DIT",
-                "enable_proj": "Enable Projection",
-                "dropout": "LoRA Dropout",
-                "tensorboard_path": "Tensorboard Path (Optional)",
-                "hf_model_id": "HuggingFace Model ID (e.g., openbmb/VoxCPM2)",
-                "distribute": "Distribute Mode",
-            }
-
+        d = STRINGS[lang]
         return (
-            gr.update(value=f"# {d['title']}"),
+            # Title area
+            gr.update(value=f"# 🎵 VoxCPM LoRA WebUI\n{d['header_title']}\n\n{d['header_subtitle']}"),
+            # Tabs
             gr.update(label=d["tab_train"]),
             gr.update(label=d["tab_infer"]),
+            # Training setup markdown
+            gr.update(value=f"{d['train_setup_title']}\n{d['train_setup_desc']}"),
+            # Base config header
+            gr.update(value=d["base_config_header"]),
+            # Form labels
             gr.update(label=d["pretrained_path"]),
             gr.update(label=d["train_manifest"]),
             gr.update(label=d["val_manifest"]),
+            # Training params header
+            gr.update(value=d["train_params_header"]),
             gr.update(label=d["lr"]),
             gr.update(label=d["max_iters"]),
             gr.update(label=d["batch_size"]),
@@ -1240,49 +1146,71 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
             gr.update(label=d["output_name"]),
             gr.update(value=d["start_train"]),
             gr.update(value=d["stop_train"]),
+            # Advanced accordion title
+            gr.update(label=d["advanced_accordion"]),
+            # Advanced options
+            gr.update(label=d["grad_accum_steps"]),
+            gr.update(label=d["num_workers"]),
+            gr.update(label=d["log_interval"]),
+            gr.update(label=d["valid_interval"]),
+            gr.update(label=d["weight_decay"]),
+            gr.update(label=d["warmup_steps"]),
+            gr.update(label=d["max_steps"]),
+            gr.update(label=d["sample_rate"]),
+            gr.update(label=d["max_grad_norm"]),
+            gr.update(label=d["tensorboard_path"]),
+            gr.update(label=d["enable_lm"]),
+            gr.update(label=d["enable_dit"]),
+            gr.update(label=d["enable_proj"]),
+            gr.update(label=d["dropout"]),
+            # Distribution
+            gr.update(value=d["distribution_header"]),
+            gr.update(label=d["hf_model_id"]),
+            gr.update(label=d["distribute"]),
+            # Training logs header
+            gr.update(value=d["train_logs_header"]),
             gr.update(label=d["train_logs"]),
-            # Advanced options (must match outputs order)
-            gr.update(label=adv["grad_accum_steps"]),
-            gr.update(label=adv["num_workers"]),
-            gr.update(label=adv["log_interval"]),
-            gr.update(label=adv["valid_interval"]),
-            gr.update(label=adv["weight_decay"]),
-            gr.update(label=adv["warmup_steps"]),
-            gr.update(label=adv["max_steps"]),
-            gr.update(label=adv["sample_rate"]),
-            gr.update(label=adv["max_grad_norm"]),
-            gr.update(label=adv["tensorboard_path"]),
-            gr.update(label=adv["enable_lm"]),
-            gr.update(label=adv["enable_dit"]),
-            gr.update(label=adv["enable_proj"]),
-            gr.update(label=adv["dropout"]),
-            # Distribution options
-            gr.update(label=adv["hf_model_id"]),
-            gr.update(label=adv["distribute"]),
             # Inference section
-            gr.update(label=d["text_to_synth"]),
+            gr.update(value=f"{d['infer_title']}\n{d['infer_desc']}"),
+            gr.update(value=d["input_config_header"]),
+            gr.update(label=d["text_to_synth"], placeholder=d["placeholder_synth"]),
+            gr.update(value=d["voice_clone_header"]),
             gr.update(label=d["ref_audio"]),
-            gr.update(label=d["ref_text"]),
-            gr.update(label=d["select_lora"]),
+            gr.update(label=d["ref_text"], placeholder=d["placeholder_ref_text"]),
+            # Model selection
+            gr.update(value=d["model_select_header"]),
+            gr.update(label=d["select_lora"], info=d["info_lora_select"]),
             gr.update(value=d["refresh"]),
-            gr.update(label=d["cfg_scale"]),
-            gr.update(label=d["infer_steps"]),
-            gr.update(label=d["seed"]),
+            gr.update(value=d["gen_params_header"]),
+            gr.update(label=d["cfg_scale"], info=d["info_cfg"]),
+            gr.update(label=d["infer_steps"], info=d["info_steps"]),
+            gr.update(label=d["seed"], info=d["info_seed"]),
             gr.update(value=d["gen_audio"]),
+            # Output section
+            gr.update(value=d["gen_output_header"]),
             gr.update(label=d["gen_output"]),
-            gr.update(label=d["status"]),
+            gr.update(value=d["status_header"]),
+            gr.update(label=d["status"], placeholder=d["placeholder_status"]),
         )
 
     lang_btn.change(
         change_language,
         inputs=[lang_btn],
         outputs=[
+            # Title area
             title_md,
+            # Tabs
             tab_train,
             tab_infer,
+            # Training setup
+            train_setup_md,
+            base_config_md,
+            # Form labels
             train_pretrained_path,
             train_manifest,
             val_manifest,
+            # Training params
+            train_params_md,
             lr,
             num_iters,
             batch_size,
@@ -1292,8 +1220,9 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
             output_name,
             start_btn,
             stop_btn,
-            logs_out,
-            # advanced outputs
+            # Advanced accordion title
+            advanced_acc,
+            # Advanced options
             grad_accum_steps,
             num_workers,
             log_interval,
@@ -1308,19 +1237,33 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
             enable_dit,
             enable_proj,
             dropout,
-            # distribution outputs
+            # Distribution
+            distribution_md,
             hf_model_id,
             distribute,
+            # Training logs
+            train_logs_md,
+            logs_out,
+            # Inference section
+            infer_header_md,
+            input_config_md,
             infer_text,
+            voice_clone_md,
             prompt_wav,
             prompt_text,
+            # Model selection
+            model_select_md,
             lora_select,
             refresh_lora_btn,
+            gen_params_md,
             cfg_scale,
             steps,
             seed,
             generate_btn,
+            # Output section
+            gen_output_md,
             audio_out,
+            status_header_md,
             status_out,
         ],
     )
